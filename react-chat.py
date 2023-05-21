@@ -25,19 +25,19 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, gpt_completion
 dict_tools = {
     'Calculator': {
         'func': calculate,
-        'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations (example input: 4 * 7 / 3)',
+        'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations. (Example input: 4 * 7 / 3)',
     },
     'WebSearch': {
         'func': serps_search,
-        'description': 'Search Google (example input: Who is the current CEO of the Robin Hood Foundation?)',
+        'description': 'Search Google. (Example input: Who is the current CEO of the Robin Hood Foundation?)',
     },
     'WikipediaPagesSearch': {
         'func': wikipedia_pages_search,
-        'description': 'Search to see what pages on Wikipedia exist for a topic, person, organization exists before retrieving content. (eample input: Jurrasic Park cast)',
+        'description': 'Search to see what pages on Wikipedia exist for a topic, person, organization exists before retrieving content. (Example input: Jurrasic Park cast)',
     },
     'WikipediaPageContent': {
         'func': wikipedia_page_content_retrieval,
-        'description': 'After performing a pages search, this tool can retrieve content for a given Wikipedia page title (example input: President of the United States)',
+        'description': 'After performing a pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
     }
 }
 valid_tools = list(dict_tools.keys())
@@ -90,7 +90,6 @@ class ReActChatGuidance():
         self.tools = tools
 
     def fn_tool(self, tool_name, tool_input):
-        print('fn_tool', tool_name, tool_input)
         return self.tools[tool_name]['func'](tool_input)
     
     def query(self, query):
@@ -100,9 +99,10 @@ class ReActChatGuidance():
         history = chat_progressing.text
         # --- assistant config
         assistant_cycles_num = 0
+        assistant_cycles_max = 20
         # --- RUN
-        while assistant_cycles_num < 10:
-            print(f'assistant working... cycle #{assistant_cycles_num}...')
+        while assistant_cycles_num <= assistant_cycles_max:
+            print(f'assistant cycle #{assistant_cycles_num}...')
             chat_prompt_assistant = self.guidance(react_prompt_progress_assistant, llm=self.llm)
             chat_progressing = chat_prompt_assistant(history=history)
             chat_progressing_recent_assistant_text = chat_progressing.text[chat_progressing.text.rindex('<|im_start|>assistant'):]
@@ -110,7 +110,6 @@ class ReActChatGuidance():
             if 'Action:' in chat_progressing_recent_assistant_text or assistant_cycles_num == 0:
                 # TODO: make this more flexible where we can halt any action evaluation, for when we'd want a ToT approach where it'd vote on paths suggested
                 assistant_text_arr = chat_progressing_recent_assistant_text.split('\n')
-                print(assistant_text_arr)
                 val_rexep = re.compile(': (.+)')
                 first_action_thought_idx  = _.find_index(assistant_text_arr, lambda txt: 'Thought' in txt)
                 first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action' in txt)
@@ -133,6 +132,9 @@ class ReActChatGuidance():
                 break
             # ... increment and run again!
             assistant_cycles_num += 1
+            # ... if we hit max cycles, just throw we should have had a response by now
+            if assistant_cycles_num == assistant_cycles_max:
+                raise 'Max assistant cycles with no final answer.'
 
         # FIN
         # print("///////////")
@@ -151,11 +153,11 @@ class ReActChatGuidance():
 # ==========================================================
 agent = ReActChatGuidance(guidance, tools=dict_tools)
 # prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 5 * 65.5 equal and is it the number as the age of the President of Zimbabwe?"
-prompt_calculation = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the age of NYC's Brooklyn Borough President? Return the difference between the two numbers?" # lol, funny how you can contradict a IO statement. but our ReAct setup still works
+prompt_calculation = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Brooklyn Borough President's age? Calculate the difference." # lol, funny how you can contradict a IO statement. but our ReAct setup still works
 response_react = agent.query(prompt_calculation)
 print(f'========== ReAct Response: Tools - Calculator & Search ==========')
 print('Response ReAct: ', response_react)
-response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
-print('Response IO: ', response_io)
+# response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
+# print('Response IO: ', response_io)
 
 exit()

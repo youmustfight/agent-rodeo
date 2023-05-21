@@ -14,7 +14,7 @@ def wikipedia_pages_search(search_query):
     data = response.json()
     # RETURNs list of page titles that we found successfully. it's a str[] in a nested arr returned (also can pass back the )
     results = list(zip(data[1], data[3]))
-    print('[TOOL] wikipedia_pages_search -> ', results)
+    # print('[TOOL] wikipedia_pages_search -> ', results)
     return results
 
 
@@ -42,5 +42,5 @@ def wikipedia_page_content_retrieval(search_query):
     page_id = next(iter(data["query"]["pages"].keys()))
     page_content = data["query"]["pages"][page_id]["extract"]
     # RETURN
-    print('[TOOL] wikipedia_search: found -> ', page_content)
+    # print('[TOOL] wikipedia_search: found -> ', page_content)
     return page_content
