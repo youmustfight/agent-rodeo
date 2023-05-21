@@ -10,7 +10,7 @@ from utils.gpt import COMPLETION_MODEL_4, gpt_completion
 # TBH, this may not really be chain of thought, bc it's just an extra preceding query, idk tho seems murky
 # ==========================================================
 
-gpt4 = guidance.llms.OpenAI("gpt-4", token=env.env_get_open_ai_api_key())
+gpt = guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key())
 
 def cot(prompt_task):
     # Multistep prompt, starting with query for inspiration, then executing the task.
@@ -36,11 +36,13 @@ def cot(prompt_task):
     {{#assistant~}}
     {{gen 'answer' temperature=0 max_tokens=1000}}
     {{~/assistant}}
-    """, llm=gpt4)
+    """, llm=gpt)
     # Execute with prompt input var
     executed_program = program(prompt_task=prompt_task)
     print("\nEXECUTED PROGRAM:\n")
+    print(dir(executed_program))
     print(executed_program)
+    print(executed_program.text)
     print("\n\nANSWER:\n")
     print(executed_program.variables().get('answer'))
     # Return
@@ -53,7 +55,7 @@ def cot(prompt_task):
 
 prompt = "Write a coherent passage of 4 short paragraphs. The end sentence of each paragraph must be: 1. It isn't difficult to do a handstand if you just stand on your hands. 2. It caught him off guard that space smelled of seared steak. 3. When she didn't like a guy who was trying to pick her up, she started using sign language. 4. Each person who knows you has a different perception of who you are."
 response_cot = cot(prompt)
-print(f'========== ToT Response ==========')
+print(f'========== CoT Response ==========')
 print(response_cot)
 response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
 print(f'========== IO Response ==========')
@@ -75,4 +77,5 @@ print(response_io)
 # The concept of identity and self-perception is a complex and ever-evolving subject. It's impossible for two people to share an identical viewpoint about someone they both know. Our experiences and interactions with others shape our understanding of them, which means that each person we encounter forms their own unique perspective. Each person who knows you has a different perception of who you are.
 
 # ==========================================================
+
 exit()

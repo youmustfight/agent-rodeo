@@ -94,4 +94,5 @@ print(response_io)
 # The way we perceive ourselves may not necessarily align with how others perceive us. Our friends, family, and acquaintances all have unique experiences and interactions with us that shape their individual understanding of our character. It is important to remember that, just like a kaleidoscope, each person who knows you has a different perception of who you are.
 
 # ==========================================================
+
 exit()

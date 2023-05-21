@@ -32,10 +32,10 @@ def gpt_completion(prompt, model=COMPLETION_MODEL_3_5, temperature=TEMPERATURE_D
             text = response['choices'][0]['message']['content'].strip()
             return text
         except Exception as err:
+            print('[Error]:', err, '\n', f'{prompt[0:320]}...')
             retry += 1
             if retry >= max_retry:
                 return "[Error]: %s" % err
-            print('[Error]:', err, '\n', f'{prompt[0:320]}...')
 
 
 def extract_json_from_text_string(text_str: str):
@@ -45,5 +45,6 @@ def extract_json_from_text_string(text_str: str):
         json_str = text_str[lp_idx:rp_idx+1]
         json_obj = json.loads(json_str)
         return json_obj 
-    except:
+    except Exception as err:
+        print(err)
         return None
