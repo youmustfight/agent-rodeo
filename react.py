@@ -1,5 +1,7 @@
 import guidance
 import requests
+import tools.calculate
+import tools.serps_search
 import utils.env as env
 from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, gpt_completion
 
@@ -14,28 +16,12 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, gpt_completion
 # ==========================================================
 # TOOLS
 # ==========================================================
-def calculate(mathy_things_hopefully):
-    print('[TOOL] calculate', mathy_things_hopefully)
-    res = eval(mathy_things_hopefully)
-    print('[TOOL] calculate -> res', res)
-    return res
-
-def serps_search(search_term):
-    print('[TOOL] serps_search', search_term)
-    headers = { 'Ocp-Apim-Subscription-Key': env.env_get_bing_api_key() }
-    params = {'q': search_term, 'textDecorations': True, 'textFormat': 'HTML'}
-    response = requests.get('https://api.bing.microsoft.com/', headers=headers, params=params)
-    response.raise_for_status()
-    search_results = response.json()
-    print('[TOOL] serps_search -> search_results', search_results)
-    return search_results
 
 dict_tools = {
-    'Calculator': calculate,
-    'WebSearch': serps_search
+    'Calculator': tools.calculate,
+    'WebSearch': tools.serps_search
 }
 valid_tools = list(dict_tools.keys())
-
 
 # ==========================================================
 # PROMPT TEMPLATES
@@ -109,7 +95,7 @@ Thought: {{gen 'thought' stop='\\n'}}
 class ReActGuidance():
     def __init__(self, guidance, tools, max_iters=3):
         self.guidance = guidance
-        self.llm = guidance.llms.OpenAI("text-davinci-003", token=env.env_get_open_ai_api_key()) # gpt-4
+        self.llm = guidance.llms.OpenAI("text-davinci-003", token=env.env_get_open_ai_api_key()) # gpt-4 # gpt-3.5-turbo
         self.max_iters = max_iters
         self.tools = tools
 
