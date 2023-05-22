@@ -24,11 +24,13 @@ def tot(prompt_task):
 		# --- generate
 		while len(plans) < 3:
 				print(f'GENERATING PLAN #{len(plans) + 1}...')
-				agent = ReActChatGuidance(guidance, actions={}) # could be cool to do a quick LLM call to see what tools are relevant dict_actions
-				agent_plan = agent.query(prompt_task, return_plan=True)
+				agent = ReActChatGuidance(guidance, actions=dict_actions) # could be cool to do a quick LLM call to see what tools are relevant dict_actions
+				query = f'I want the following task done: "{prompt_task}". Please don\'t do the task yet. Who is a lesser known world-class expert (past or present) who can do this task/topic?'
+				agent_plan = agent.query(query=query, return_plan=True)
 				plans.append(agent_plan)
 		# --- format
 		execution_plans = "\n\n-------\n\n".join(f"## CHOICE {idx} ##\n\n{str}" for idx, str in enumerate(plans))
+		print('\n\n' + execution_plans)
 
 		# VOTE
 		votes = []
@@ -42,14 +44,14 @@ def tot(prompt_task):
 				json = extract_json_from_text_string(vote_string)
 				choice = int(json['choice_integer'])
 				tally[choice] = tally.get(choice, 0) + 1
-				print(f'Voted {choice}: {json.get("choice_reason", "")[0:300]}...')
+				print(f'Voted {choice}: {json.get("choice_reason", "")[0:600]}...')
 		print(f'\nTALLY:\n{tally}\n')
 
 		# EXECUTE PLAN?
 		highest_voted_plan = plans[max(tally)]
 		final_execution = gpt_completion(
-				prompt=f'Do the following task.\n\nINSPIRATION: {highest_voted_plan}\n\nTASK: {prompt_task}',
-				model=COMPLETION_MODEL_4)
+				prompt=f'{prompt_task} (Inspiration: {highest_voted_plan.replace("Final Answer:", "")})',
+				model=COMPLETION_MODEL_3_5)
 		# RETURN (select plan via index with highest int)
 
 		return final_execution

@@ -1,5 +1,5 @@
-def calculate(mathy_things_hopefully):
-    print('[TOOL] calculate', mathy_things_hopefully)
-    res = eval(mathy_things_hopefully)
-    print('[TOOL] calculate -> res', res)
+def calculate(query, history):
+    print('[TOOL] calculate', query)
+    res = eval(query)
+    print('[TOOL] calculate -> ', res)
     return res

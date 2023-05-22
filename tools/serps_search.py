@@ -2,8 +2,8 @@ import json
 import requests
 import utils.env as env
 
-def serps_search(search_query):
-    print('[TOOL] serps_search', search_query)
+def serps_search(query, history):
+    print('[TOOL] serps_search', query)
     response = requests.request(
         'POST',
         'https://google.serper.dev/search',
@@ -12,7 +12,7 @@ def serps_search(search_query):
             'Content-Type': 'application/json'
         },
         data=json.dumps({
-            'q': search_query,
+            'q': query,
             "autocorrect": False
         }),
     )

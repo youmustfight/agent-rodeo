@@ -2,10 +2,12 @@ from datetime import date
 import pydash as _
 import re
 import guidance
-from tools.calculate import calculate 
-from tools.serps_search import serps_search 
+from tools.calculate import calculate
+from tools.llms import writing
+from tools.serps_search import serps_search
 from tools.wikipedia import wikipedia_page_content_retrieval, wikipedia_pages_search 
 import utils.env as env
+from utils.gpt import COMPLETION_MODEL_3_5
 
 # ==========================================================
 # ReAct (reason, action)
@@ -35,6 +37,10 @@ dict_actions = {
     'Fetch Wikipedia Page Content': {
         'func': wikipedia_page_content_retrieval,
         'description': 'After performing a pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
+    },
+    'Write': {
+        'func': writing,
+        'description': ' General purpose function for completing logic, planning, and writing tasks. It\'s input is a text query/prompt. (Example inputs: write a plan for police reform, what is an opening joke for a stand up routine)'
     }
 }
 
@@ -44,7 +50,7 @@ dict_actions = {
 class ReActChatGuidance():
     def __init__(self, guidance, actions, caching=False):
         self.guidance = guidance
-        self.llm = guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=caching) # gpt-4
+        self.llm = guidance.llms.OpenAI(COMPLETION_MODEL_3_5, token=env.env_get_open_ai_api_key(), caching=caching) # gpt-4
         self.actions = actions
         # --- prompts
         react_prompt_system_actions_text = "\n".join(map(lambda action_label: f"{action_label}: {dict_actions[action_label]['description']}", list(dict_actions.keys())))
@@ -65,7 +71,7 @@ class ReActChatGuidance():
         Observation: the result of the action
         ... (this Thought/Action/Action Input/Observation can repeat N times)
         Thought: do you know the final answer
-        Final Answer: the final answer to the original input question
+        Final Answer: the final answer to the original input question.
         """ + "{{~/system}}"
         self.react_prompt_init_user = """
         {{#user~}}
@@ -79,8 +85,8 @@ class ReActChatGuidance():
         {{~/assistant}}
         """
 
-    def fn_action(self, action_label, action_input):
-        return self.actions[action_label]['func'](action_input)
+    def fn_action(self, action_label, action_input, history=None):
+        return self.actions[action_label]['func'](action_input, history)
     
     def query(self, query, return_plan=False, init_history=None):
         chat_prompt_init = self.guidance("\n".join([self.react_prompt_system, self.react_prompt_init_user]), llm=self.llm)
@@ -108,21 +114,28 @@ class ReActChatGuidance():
                 first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action' in txt)
                 first_action_name  = val_rexep.findall(assistant_text_arr[first_action_idx])[0]
                 first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input' in txt)
-                first_action_input  = val_rexep.findall(assistant_text_arr[first_action_input_idx])[0]
+                first_action_input = val_rexep.findall(assistant_text_arr[first_action_input_idx])
+                print('...', assistant_text_arr[first_action_thought_idx])
+                if first_action_input:
+                    first_action_input = first_action_input[0]
+                else: 
+                    first_action_input = None
                 # ... if we have a valid tool
                 if dict_actions.get(first_action_name) != None:
                     # ... replace the end of the history with output and CoT can continue w/ updated info
-                    first_action_output = self.fn_action(first_action_name, first_action_input)
+                    first_action_output = self.fn_action(first_action_name, first_action_input, history)
                     updated_agent_block = '\n'.join([
                         f'{assistant_text_arr[first_action_thought_idx]}',
                         f'Action: {first_action_name}',
                         f'Action Input: {first_action_input}',
-                        f'Action Output: {first_action_output}',
+                        f'Observation: {first_action_output}',
                     ])
                     history = chat_progressing.text[:chat_progressing.text.rindex('<|im_start|>assistant')] + "<|im_start|>assistant\n" + updated_agent_block + "\n<|im_end|>\n"
             # ... if it was just a final answer, and no action, then be done
             elif 'Final Answer' in chat_progressing_recent_assistant_text:
                 break
+            else:
+                print('WARNING: Looping through without action ->\n', history)
             # ... increment and run again!
             assistant_cycles_num += 1
             # ... if we hit max cycles, just throw we should have had a response by now
@@ -143,11 +156,14 @@ if __name__ == "__main__":
 # TEST: CALCULATOR
 # ==========================================================
     agent = ReActChatGuidance(guidance, actions=dict_actions)
-    # prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 5 * 65.5 equal and is it the number as the age of the President of Zimbabwe?"
-    prompt_calculation = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
-    response_react = agent.query(prompt_calculation)
+    prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
+    response_react_calculations = agent.query(prompt)
+    prompt = "Write an inspirational speech for President Joe Biden who will be speaking at the MET Gala"
+    response_react_writing = agent.query(prompt)
     print(f'========== ReAct Response: Tools - Calculator & Search ==========')
-    print('Response ReAct: ', response_react)
-    # response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
+    print('Response ReAct: ', response_react_calculations)
+    print(f'========== ReAct Response: Tools - Writing & Search ==========')
+    print('Response ReAct: ', response_react_writing)
+    # response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
     # print('Response IO: ', response_io)
     exit()

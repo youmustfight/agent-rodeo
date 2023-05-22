@@ -1,14 +1,16 @@
 import requests
 
-def wikipedia_pages_search(search_query):
-    print('[TOOL] wikipedia_pages_search', search_query)
+from utils.gpt import gpt_completion
+
+def wikipedia_pages_search(query, history):
+    print('[TOOL] wikipedia_pages_search', query)
     # REQUEST
     # --- matching terms
     response = requests.get(
         "https://en.wikipedia.org/w/api.php",
         params={
             "action": "opensearch",
-            "search": search_query,
+            "search": query,
         },
     )
     data = response.json()
@@ -18,8 +20,8 @@ def wikipedia_pages_search(search_query):
     return results
 
 
-def wikipedia_page_content_retrieval(search_query):
-    print('[TOOL] wikipedia_search', search_query)
+def wikipedia_page_content_retrieval(query, history):
+    print('[TOOL] wikipedia_search', query)
     # REQUEST
     # --- page
     response = requests.get(
@@ -27,7 +29,7 @@ def wikipedia_page_content_retrieval(search_query):
         params={
             "action": "query",
             "format": "json",
-            "titles": search_query,
+            "titles": query,
             "prop": "extracts",
             "explaintext": True,  # Plain text
         },
@@ -41,6 +43,10 @@ def wikipedia_page_content_retrieval(search_query):
     # --- if not
     page_id = next(iter(data["query"]["pages"].keys()))
     page_content = data["query"]["pages"][page_id]["extract"]
+
+    # CONDENSE
+    page_content = gpt_completion("CONTENT: {page_content}\n\n QUERY: {query}\n\n SUMMARY: ")
+    
     # RETURN
     # print('[TOOL] wikipedia_search: found -> ', page_content)
     return page_content
