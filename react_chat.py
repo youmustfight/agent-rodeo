@@ -117,7 +117,7 @@ class ReActChatGuidance():
         history = init_history or chat_progressing.text
         # --- assistant config
         assistant_cycles_num = 0
-        assistant_cycles_max = 12
+        assistant_cycles_max = 20
         # --- RUN
         while assistant_cycles_num <= assistant_cycles_max:
             print(f'assistant cycle #{assistant_cycles_num}...')
@@ -154,7 +154,7 @@ class ReActChatGuidance():
                         f'Action Input: {first_action_input}',
                         f'Action Output: {first_action_output}',
                     ])
-                    # ... and then append an observation on this output
+                    # ... and then append an observation on this output TODO: should do another turbo completion to be cheap/faster
                     observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: the result of the action''')
                     print('Observation: ', observation, '\n', updated_agent_block)
                     updated_agent_block = updated_agent_block + f'\nObservation: {observation}'
@@ -174,7 +174,7 @@ class ReActChatGuidance():
                     print('final_action_output', final_action_output)
                     raise err # return final_answer, history
             else:
-                print('WARNING: Looping through without Action or Final Answer ->\n') # history
+                print('\nWARNING: Looping through without Action or Final Answer\n') # history
             # ... increment and run again!
             assistant_cycles_num += 1
             # ... if we hit max cycles, just throw we should have had a response by now
@@ -194,11 +194,10 @@ if __name__ == "__main__":
     response_react_calculations, history = agent.query(prompt)
     print(f'========== ReAct Response: Tools - Search & Math = Result ==========')
     print(response_react_calculations)
-    # print(history)
 
     print(f'========== ReAct Response: Tools - Search & Writing ==========')
     agent = ReActChatGuidance(guidance, actions=dict_actions)
-    prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
+    prompt = "As Karl Marx, you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
     response_react_writing, conversation = agent.query(prompt)
     print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
     print(response_react_writing)
