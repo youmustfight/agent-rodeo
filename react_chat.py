@@ -26,11 +26,11 @@ dict_actions = {
     # --- Methods
     'Calculate': {
         'func': calculate,
-        'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations. (Example input: 4 * 7 / 3)',
+        'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations. (Example action input: 4 * 7 / 3)',
     },
     'Write': {
         'func': writing,
-        'description': ' Writes something given a writing prompt. Provide additional context when possible. Not appropriate for math, good for creative writing. (Example input: ["Write out what the meaning of life is", "Fact X", "Statistic Y", "Context Z", ...])'
+        'description': ' Writes something given a writing prompt. Provide additional context when possible. Not appropriate for math, good for creative writing. (Example action input: ["Write out what the meaning of life is", "Fact X", "Statistic Y", "Context Z", ...])'
     },
     # --- Chemistry
     'Get a Chemical Compound by CID': {
@@ -39,28 +39,28 @@ dict_actions = {
     },
     'Get a Chemical Compound by SID': {
         'func': pubchem_get_compound_by_sid,
-        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example input: "999999999999")'
+        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example action input: "999999999999")'
     },
     'Search for Chemical Compound CIDs by Name': {
         'func': pubchem_search_compounds_by_name,
-        'description': 'Fetch a list of compound CIDs given a proper molecule name, not a property. Cannot take conversational inputs. (Example input: "Kryptonite")'
+        'description': 'Fetch a list of compound CIDs given a proper molecule name, not a property. Cannot take conversational inputs. (Example action input: "Kryptonite")'
     },
     'Convert a Molecule\'s SMILES into SELFIES': {
         'func': convert_smiles_to_selfies,
-        'description': 'Translates a SMILES string into its corresponding SELFIES string. Strictly use the SMILES code as input. (Example input: "c1ccccc1") (Example output: "[Cl][Ag]")'
+        'description': 'Translates a SMILES string into its corresponding SELFIES string. Strictly use the SMILES code as input. (Example action input: "c1ccccc1") (Example output: "[Cl][Ag]")'
     },
     # --- Search Content
     'Search Google Results': {
         'func': serps_search,
-        'description': 'Search Google for information that needs to be timely. (Example input: Who is the current CEO of the Robin Hood Foundation?)',
+        'description': 'Search Google for information that needs to be timely. (Example action input: Who is the current CEO of the Robin Hood Foundation?)',
     },
     'Search Wikipedia Pages': {
         'func': wikipedia_pages_search,
-        'description': 'Search to see a list of Wikipedia pages that exist for a topic, person, organization exists before retrieving content. (Example input: Jurrasic Park cast)',
+        'description': 'Search to see a list of Wikipedia pages that exist for a topic, person, organization exists before retrieving content. (Example action input: Jurrasic Park cast)',
     },
     'Fetch Wikipedia Page Content': {
         'func': wikipedia_page_content_retrieval,
-        'description': 'After performing a Wikipedia pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
+        'description': 'After performing a Wikipedia pages search, this tool can retrieve content for a given Wikipedia page title (Example action input: President of the United States)',
     }
 }
 
@@ -195,12 +195,12 @@ if __name__ == "__main__":
     print(f'========== ReAct Response: Tools - Search & Math = Result ==========')
     print(response_react_calculations)
 
-    print(f'========== ReAct Response: Tools - Search & Writing ==========')
-    agent = ReActChatGuidance(guidance, actions=dict_actions)
-    prompt = "You are Karl Marx and you are speaking at the MET Gala. Research the recent theme and write a speech. Return the speech\'s text itself."
-    response_react_writing, conversation = agent.query(prompt)
-    print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
-    print(response_react_writing)
+    # print(f'========== ReAct Response: Tools - Search & Writing ==========')
+    # agent = ReActChatGuidance(guidance, actions=dict_actions)
+    # prompt = "You are Karl Marx and you are speaking at the MET Gala. Research the recent theme and write a speech. Return the speech\'s text itself."
+    # response_react_writing, conversation = agent.query(prompt)
+    # print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
+    # print(response_react_writing)
 
     print(f'========== ReAct Response: Tools - Search & Chemistry ==========')
     agent = ReActChatGuidance(guidance, actions=dict_actions)
