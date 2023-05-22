@@ -43,7 +43,7 @@ dict_actions = {
     },
     'Search for Chemical Compound CIDs by Name': {
         'func': pubchem_search_compounds_by_name,
-        'description': 'Fetch a list of compound CIDs given a specific molecule name. Cannot take conversational inputs. (Example input: "Kryptonite")'
+        'description': 'Fetch a list of compound CIDs given a proper molecule name, not a property. Cannot take conversational inputs. (Example input: "Kryptonite")'
     },
     'Convert a Molecule\'s SMILES into SELFIES': {
         'func': convert_smiles_to_selfies,
