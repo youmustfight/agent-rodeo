@@ -30,7 +30,7 @@ dict_actions = {
     },
     'Write': {
         'func': writing,
-        'description': ' Writes something given a writing prompt. Not appropriate for math. (Example input: ["Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.])'
+        'description': ' Writes something given a writing prompt. Provide additional context when possible. Not appropriate for math, good for creative writing. (Example input: ["Write out what the meaning of life is", "Fact X", "Statistic Y", "Context Z", ...])'
     },
     # --- Chemistry
     'Get a Chemical Compound by CID': {
@@ -52,7 +52,7 @@ dict_actions = {
     # --- Search Content
     'Search Google Results': {
         'func': serps_search,
-        'description': 'Search Google. (Example input: Who is the current CEO of the Robin Hood Foundation?)',
+        'description': 'Search Google for information that needs to be timely. (Example input: Who is the current CEO of the Robin Hood Foundation?)',
     },
     'Search Wikipedia Pages': {
         'func': wikipedia_pages_search,
@@ -155,7 +155,7 @@ class ReActChatGuidance():
                         f'Action Output: {first_action_output}',
                     ])
                     # ... and then append an observation on this output TODO: should do another turbo completion to be cheap/faster
-                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: the result of the action''')
+                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: the result of the action. state nothing if there was no output''')
                     print('Observation: ', observation, '\n', updated_agent_block)
                     updated_agent_block = updated_agent_block + f'\nObservation: {observation}'
                     history = chat_progressing.text[:chat_progressing.text.rindex('<|im_start|>assistant')] + "<|im_start|>assistant\n" + updated_agent_block + "\n<|im_end|>\n"
@@ -197,7 +197,7 @@ if __name__ == "__main__":
 
     print(f'========== ReAct Response: Tools - Search & Writing ==========')
     agent = ReActChatGuidance(guidance, actions=dict_actions)
-    prompt = "As Karl Marx, you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
+    prompt = "You are Karl Marx and you are speaking at the MET Gala. Research the recent theme and write a speech. Return the speech\'s text itself."
     response_react_writing, conversation = agent.query(prompt)
     print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
     print(response_react_writing)
