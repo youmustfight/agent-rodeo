@@ -30,7 +30,7 @@ dict_actions = {
     },
     'Write': {
         'func': writing,
-        'description': ' General purpose tool for writing tasks. Not appropriate for math. It\'s input is a task and relevant context, not the completed task text. (Example input: ("Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.))'
+        'description': ' Writes something given a writing prompt. Not appropriate for math. (Example input: ["Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.])'
     },
     # --- Chemistry
     'Get a Chemical Compound by CID': {
@@ -39,11 +39,11 @@ dict_actions = {
     },
     'Get a Chemical Compound by SID': {
         'func': pubchem_get_compound_by_sid,
-        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example input: "24277882")'
+        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example input: "999999999999")'
     },
     'Search for Chemical Compound CIDs by Name': {
         'func': pubchem_search_compounds_by_name,
-        'description': 'Fetch a list of compound CIDs given a specific molecule name. Cannot take conversational inputs. (Example input: "Aspirin")'
+        'description': 'Fetch a list of compound CIDs given a specific molecule name. Cannot take conversational inputs. (Example input: "Kryptonite")'
     },
     'Convert a Molecule\'s SMILES into SELFIES': {
         'func': convert_smiles_to_selfies,
@@ -90,7 +90,7 @@ class ReActChatGuidance():
         Action Input: the input to the action, should be appropriate for tool input an d required
         Observation: the result of the action
         ... (this Thought/Action/Action Input/Observation can repeat N times)
-        
+
         Thought: do you know the final answer
         Final Answer: the final answer to the original input question
 
@@ -132,16 +132,19 @@ class ReActChatGuidance():
                 # TODO: make this more flexible where we can halt any action evaluation, for when we'd want a ToT approach where it'd vote on paths suggested
                 assistant_text_arr = chat_progressing_recent_assistant_text.split('\n')
                 val_rexep = re.compile(': (.+)')
-                first_action_thought_idx  = _.find_index(assistant_text_arr, lambda txt: 'Thought:' in txt)
-                first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action:' in txt)
+                first_action_thought_idx  = _.find_index(assistant_text_arr, lambda txt: 'Thought' in txt)
+                print(assistant_text_arr[first_action_thought_idx])
+                first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action' in txt) # not doing 'Action:' because we can sometimes get numeric suffixes, like 'Action 1:'
                 first_action_name  = val_rexep.findall(assistant_text_arr[first_action_idx])[0]
-                first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input:' in txt)
+                first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input' in txt)
                 first_action_input = val_rexep.findall(assistant_text_arr[first_action_input_idx])
+                # TODO: wtf am i doing this vvv ???
                 if first_action_input:
                     first_action_input = first_action_input[0]
                 else: 
                     first_action_input = None
                 # ... if we have a valid tool
+                # print(assistant_text_arr)
                 if dict_actions.get(first_action_name) != None:
                     # ... replace the end of the history with output and CoT can continue w/ updated info
                     first_action_output = self.fn_action(first_action_name, first_action_input, history)
@@ -152,8 +155,8 @@ class ReActChatGuidance():
                         f'Action Output: {first_action_output}',
                     ])
                     # ... and then append an observation on this output
-                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: does the action output satisfy the thought/action?''')
-                    print('Observation: ', observation)
+                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: the result of the action''')
+                    print('Observation: ', observation, '\n', updated_agent_block)
                     updated_agent_block = updated_agent_block + f'\nObservation: {observation}'
                     history = chat_progressing.text[:chat_progressing.text.rindex('<|im_start|>assistant')] + "<|im_start|>assistant\n" + updated_agent_block + "\n<|im_end|>\n"
             # ... if it was just a final answer, and no action, then be done
@@ -185,20 +188,20 @@ if __name__ == "__main__":
 # TEST: CALCULATOR
 # ==========================================================
 
-    # print(f'========== ReAct Response: Tools - Search & Math ==========')
-    # agent = ReActChatGuidance(guidance, actions=dict_actions)
-    # prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
-    # response_react_calculations, history = agent.query(prompt)
-    # print(f'========== ReAct Response: Tools - Search & Math = Result ==========')
-    # print(response_react_calculations)
-    # # print(history)
+    print(f'========== ReAct Response: Tools - Search & Math ==========')
+    agent = ReActChatGuidance(guidance, actions=dict_actions)
+    prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
+    response_react_calculations, history = agent.query(prompt)
+    print(f'========== ReAct Response: Tools - Search & Math = Result ==========')
+    print(response_react_calculations)
+    # print(history)
 
-    # print(f'========== ReAct Response: Tools - Search & Writing ==========')
-    # agent = ReActChatGuidance(guidance, actions=dict_actions)
-    # prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
-    # response_react_writing, conversation = agent.query(prompt)
-    # print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
-    # print(response_react_writing)
+    print(f'========== ReAct Response: Tools - Search & Writing ==========')
+    agent = ReActChatGuidance(guidance, actions=dict_actions)
+    prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
+    response_react_writing, conversation = agent.query(prompt)
+    print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
+    print(response_react_writing)
 
     print(f'========== ReAct Response: Tools - Search & Chemistry ==========')
     agent = ReActChatGuidance(guidance, actions=dict_actions)

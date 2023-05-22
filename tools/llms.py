@@ -6,15 +6,26 @@ from utils.gpt import extract_json_from_text_string, gpt_completion
 def writing(query_string, history):
     print('[TOOL] writing', type(query_string), query_string)
     # ... if we get no input, then indicate back to the LLM this is unacceptable
-    if type(query_string) != 'string':
-        return 'Tool Error: Missing action input string'
-    # ... complete
-    res = gpt_completion(f"""
-    PROMPT: {query_string.split('",')[0]}
+    try:
+        prompt_str = query_string.split('",')[0]
+        context_str = query_string.split('",')[1:]
+        # ... complete if we can grab prompt/context str
+        res = gpt_completion(f"""
+        PROMPT: {prompt_str}
 
-    CONTEXT: {query_string.split('",')[1:]}
+        CONTEXT: {context_str}
 
-    RESPONSE: """)
+        RESPONSE: """)
+    except Exception as err:
+        print('[TOOL] writing err -> ', err)
+        # ... otherwise just do a prompt
+        res = gpt_completion(f"""
+        PROMPT: {query_string}
+
+        CONTEXT: {history[-2000:]}
+
+        RESPONSE: """)
+    
     print('[TOOL] writing -> ', res)
     return res
 
