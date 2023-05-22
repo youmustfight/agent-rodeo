@@ -1,6 +1,6 @@
 import guidance
 import utils.env as env
-from utils.gpt import COMPLETION_MODEL_4, extract_json_from_text_string, gpt_completion
+from utils.gpt import extract_json_from_text_string
 
 # ==========================================================
 # SIMPLE JSON

@@ -1,3 +1,5 @@
+import guidance
+from react_chat import ReActChatGuidance, dict_actions
 from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_from_text_string, gpt_completion
 
 # ==========================================================
@@ -11,52 +13,39 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_fro
 # - How can this more closely reflect human exploration/planning
 # ==========================================================
 
+# ==========================================================
+# ToT V2
+# ==========================================================
 
 def tot(prompt_task):
 		print(f'\nPROMPT:\n{prompt_task}\n')
-		# THOUGHT STEP #1: GET IMPLICIT NORTH STAR
-		# Finding that I need to steer the plan statements a bit, so they don't disregard the writing task, but think more wholistcally
-		# success_criteria = gpt_completion(
-		# 	prompt=f'In a single sentence, describe a successful outcome for user in the following task. TASK: {prompt_task}',
-		# 	model=COMPLETION_MODEL_4)
-		# print(f'\nSUCCESS CRITERIA:\n{success_criteria}\n')
-
-		# THOUGHT STEP #2: GENERATE PLANS (5)
-		# v1 - repeated task with success 
-		# prompt_plan_v1 = f'Do the following task. SUCCESS CRITERIA: {success_criteria} TASK: {prompt_task}'
-		prompt_plan_v2 = f'Describe a way to be successful in the following task. TASK: {prompt_task}'
+		# PLANS
 		plans = []
-		while len(plans) < 3:
-				print('Planning...')
-				fetched_plan = gpt_completion(prompt=prompt_plan_v2, model=COMPLETION_MODEL_4)
-				plans.append(fetched_plan)
-		print(f'PLAN EXECUTIONS:\n')
-		print("\n---\n".join(plans))
-		print("\n\n")
-
-		# THOUGHT STEP #3: VOTE (5)
 		# --- generate
+		while len(plans) < 3:
+				print(f'GENERATING PLAN #{len(plans) + 1}...')
+				agent = ReActChatGuidance(guidance, actions={}) # could be cool to do a quick LLM call to see what tools are relevant dict_actions
+				agent_plan = agent.query(prompt_task, return_plan=True)
+				plans.append(agent_plan)
+		# --- format
+		execution_plans = "\n\n-------\n\n".join(f"## CHOICE {idx} ##\n\n{str}" for idx, str in enumerate(plans))
+
+		# VOTE
 		votes = []
 		while len(votes) < 5:
-				print('Voting...')
-				execution_plans = "\n\n".join(f"CHOICE {idx}) {str}" for idx, str in enumerate(plans))
-				vote_response = gpt_completion(
-					prompt=f'Analyizing each choice in detail in relation to the task, choose the best and respond in JSON format with keys "choice_integer" and "choice_reason". TASK: {prompt_task} \n\n {execution_plans}',
-					model=COMPLETION_MODEL_3_5)
+				print(f'VOTE #{len(votes) + 1}...')
+				vote_response = gpt_completion(prompt=f'Analyizing each choice in detail, choose the best and respond in JSON format with keys "choice_integer" and "choice_reason". TASK: {prompt_task} \n\n {execution_plans}', model=COMPLETION_MODEL_3_5)
 				votes.append(vote_response)
 		# --- tally
 		tally = dict()
 		for vote_string in votes:
-				try:
-						json = extract_json_from_text_string(vote_string)
-						choice = int(json['choice_integer'])
-						print(f'Voted {choice}: {json.get("choice_reason", "")[0:300]}...')
-						tally[choice] = tally.get(choice, 0) + 1
-				except Exception as err: 
-						print('No vote json/choice.', err)
+				json = extract_json_from_text_string(vote_string)
+				choice = int(json['choice_integer'])
+				tally[choice] = tally.get(choice, 0) + 1
+				print(f'Voted {choice}: {json.get("choice_reason", "")[0:300]}...')
 		print(f'\nTALLY:\n{tally}\n')
 
-		# THOUGHT STEP #4: Use highest vote as inspiration, write again
+		# EXECUTE PLAN?
 		highest_voted_plan = plans[max(tally)]
 		final_execution = gpt_completion(
 				prompt=f'Do the following task.\n\nINSPIRATION: {highest_voted_plan}\n\nTASK: {prompt_task}',
@@ -64,6 +53,63 @@ def tot(prompt_task):
 		# RETURN (select plan via index with highest int)
 
 		return final_execution
+
+# ==========================================================
+# ToT V1
+# ==========================================================
+
+# def tot(prompt_task):
+# 		print(f'\nPROMPT:\n{prompt_task}\n')
+# 		# THOUGHT STEP #1: GET IMPLICIT NORTH STAR
+# 		# Finding that I need to steer the plan statements a bit, so they don't disregard the writing task, but think more wholistcally
+# 		# success_criteria = gpt_completion(
+# 		# 	prompt=f'In a single sentence, describe a successful outcome for user in the following task. TASK: {prompt_task}',
+# 		# 	model=COMPLETION_MODEL_4)
+# 		# print(f'\nSUCCESS CRITERIA:\n{success_criteria}\n')
+
+# 		# THOUGHT STEP #2: GENERATE PLANS (5)
+# 		# v1 - repeated task with success 
+# 		# prompt_plan_v1 = f'Do the following task. SUCCESS CRITERIA: {success_criteria} TASK: {prompt_task}'
+# 		prompt_plan_v2 = f'Describe a way to be successful in the following task. TASK: {prompt_task}'
+# 		plans = []
+# 		while len(plans) < 3:
+# 				print('Planning...')
+# 				fetched_plan = gpt_completion(prompt=prompt_plan_v2, model=COMPLETION_MODEL_4)
+# 				plans.append(fetched_plan)
+# 		print(f'PLAN EXECUTIONS:\n')
+# 		print("\n---\n".join(plans))
+# 		print("\n\n")
+
+# 		# THOUGHT STEP #3: VOTE (5)
+# 		# --- generate
+# 		votes = []
+# 		while len(votes) < 5:
+# 				print('Voting...')
+# 				execution_plans = "\n\n".join(f"CHOICE {idx}) {str}" for idx, str in enumerate(plans))
+# 				vote_response = gpt_completion(
+# 					prompt=f'Analyizing each choice in detail in relation to the task, choose the best and respond in JSON format with keys "choice_integer" and "choice_reason". TASK: {prompt_task} \n\n {execution_plans}',
+# 					model=COMPLETION_MODEL_3_5)
+# 				votes.append(vote_response)
+# 		# --- tally
+# 		tally = dict()
+# 		for vote_string in votes:
+# 				try:
+# 						json = extract_json_from_text_string(vote_string)
+# 						choice = int(json['choice_integer'])
+# 						print(f'Voted {choice}: {json.get("choice_reason", "")[0:300]}...')
+# 						tally[choice] = tally.get(choice, 0) + 1
+# 				except Exception as err: 
+# 						print('No vote json/choice.', err)
+# 		print(f'\nTALLY:\n{tally}\n')
+
+# 		# THOUGHT STEP #4: Use highest vote as inspiration, write again
+# 		highest_voted_plan = plans[max(tally)]
+# 		final_execution = gpt_completion(
+# 				prompt=f'Do the following task.\n\nINSPIRATION: {highest_voted_plan}\n\nTASK: {prompt_task}',
+# 				model=COMPLETION_MODEL_4)
+# 		# RETURN (select plan via index with highest int)
+
+# 		return final_execution
 		
 
 

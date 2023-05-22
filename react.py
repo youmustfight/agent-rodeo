@@ -1,9 +1,8 @@
 import guidance
-import requests
 import tools.calculate
 import tools.serps_search
 import utils.env as env
-from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, gpt_completion
+from utils.gpt import COMPLETION_MODEL_4, gpt_completion
 
 # ==========================================================
 # ReAct (reason, action)
@@ -134,31 +133,32 @@ class ReActGuidance():
         return result_final['fn']
 
 
-# ==========================================================
-# TEST: CALCULATOR
-# ==========================================================
-print(f'========== ReAct Response: Tools - Calculator ==========')
-agent = ReActGuidance(guidance, dict_tools)
-prompt_calculation = 'Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 5 * 65.5 equal? Provide just a number as a final answer.'
-# For this prompt, if I don't include "provide just a number as final answer", the GPT 3.5/4 will do CoT. Probably embedded in their prompt.
-# However, when it's just a final answer response, the IO 3.5/4 gets it wrong and returns a differnet value every time
-response_react = agent.query(prompt_calculation)
-response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
-print('Response ReAct: ', response_react)
-print('Response IO: ', response_io)
 
+if __name__ == "__main__":
+    # ==========================================================
+    # TEST: CALCULATOR
+    # ==========================================================
+    print(f'========== ReAct Response: Tools - Calculator ==========')
+    agent = ReActGuidance(guidance, dict_tools)
+    prompt_calculation = 'Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 5 * 65.5 equal? Provide just a number as a final answer.'
+    # For this prompt, if I don't include "provide just a number as final answer", the GPT 3.5/4 will do CoT. Probably embedded in their prompt.
+    # However, when it's just a final answer response, the IO 3.5/4 gets it wrong and returns a differnet value every time
+    response_react = agent.query(prompt_calculation)
+    response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
+    print('Response ReAct: ', response_react)
+    print('Response IO: ', response_io)
 
-# # ==========================================================
-# # TEST: WEB SEARCH
-# # ==========================================================
-# print(f'========== ReAct Response: Tools - Web Search ==========')
-# agent = ReActGuidance(guidance, dict_tools)
-# # prompt_calculation = 'Who is the current president of the United Nations General Assembly?'
-# # prompt_calculation = 'How old is the president of the United State\'s wife?'
-# prompt_calculation = ' I need to find out the number 8 of Manchester United'
-# response_react = agent(prompt_calculation)
-# response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
-# print('Response ReAct: ', response_react)
-# print('Response IO: ', response_io)
+    # # ==========================================================
+    # # TEST: WEB SEARCH
+    # # ==========================================================
+    # print(f'========== ReAct Response: Tools - Web Search ==========')
+    # agent = ReActGuidance(guidance, dict_tools)
+    # # prompt_calculation = 'Who is the current president of the United Nations General Assembly?'
+    # # prompt_calculation = 'How old is the president of the United State\'s wife?'
+    # prompt_calculation = ' I need to find out the number 8 of Manchester United'
+    # response_react = agent(prompt_calculation)
+    # response_io = gpt_completion(prompt=prompt_calculation, model=COMPLETION_MODEL_4)
+    # print('Response ReAct: ', response_react)
+    # print('Response IO: ', response_io)
 
-exit()
+    exit()
