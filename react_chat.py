@@ -3,6 +3,7 @@ import pydash as _
 import re
 import guidance
 from tools.calculate import calculate
+from tools.chemistry import convert_smiles_to_selfies, pubchem_get_compound_by_cid, pubchem_get_compound_by_sid, pubchem_search_compounds_by_name
 from tools.llms import choose, writing
 from tools.serps_search import serps_search
 from tools.wikipedia import wikipedia_page_content_retrieval, wikipedia_pages_search 
@@ -22,10 +23,33 @@ from utils.gpt import COMPLETION_MODEL_3_5, gpt_completion
 # ==========================================================
 
 dict_actions = {
+    # --- Methods
     'Calculate': {
         'func': calculate,
         'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations. (Example input: 4 * 7 / 3)',
     },
+    'Write': {
+        'func': writing,
+        'description': ' General purpose tool for writing tasks. Not appropriate for math. It\'s input is a task and relevant context, not the completed task text. (Example input: ("Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.))'
+    },
+    # --- Chemistry
+    'Get a Chemical Compound by CID': {
+        'func': pubchem_get_compound_by_cid,
+        'description': 'Fetch a single compound\'s information by CID (PubChem Compound Identification). The input is a single integer.'
+    },
+    'Get a Chemical Compound by SID': {
+        'func': pubchem_get_compound_by_sid,
+        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example input: "24277882")'
+    },
+    'Search for Chemical Compound CIDs by Name': {
+        'func': pubchem_search_compounds_by_name,
+        'description': 'Fetch a list of compound CIDs given a specific molecule name. Cannot take conversational inputs. (Example input: "Aspirin")'
+    },
+    'Convert a Molecule\'s SMILES into SELFIES': {
+        'func': convert_smiles_to_selfies,
+        'description': 'Translates a SMILES string into its corresponding SELFIES string. Strictly use the SMILES code as input. (Example input: "c1ccccc1") (Example output: "[Cl][Ag]")'
+    },
+    # --- Search Content
     'Search Google Results': {
         'func': serps_search,
         'description': 'Search Google. (Example input: Who is the current CEO of the Robin Hood Foundation?)',
@@ -37,10 +61,6 @@ dict_actions = {
     'Fetch Wikipedia Page Content': {
         'func': wikipedia_page_content_retrieval,
         'description': 'After performing a Wikipedia pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
-    },
-    'Write': {
-        'func': writing,
-        'description': ' General purpose tool for writing tasks. Not appropriate for math. It\'s input is a task and relevant context, not the completed task text. (Example input: ("Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.))'
     }
 }
 
@@ -67,7 +87,7 @@ class ReActChatGuidance():
 
         Thought: you should always think about what to do
         Action: the action to take, should be one of [{", ".join(list(dict_actions.keys()))}]
-        Action Input: the input to the action, should be appropriate for tool input and required
+        Action Input: the input to the action, should be appropriate for tool input an d required
         Observation: the result of the action
         ... (this Thought/Action/Action Input/Observation can repeat N times)
         
@@ -117,7 +137,6 @@ class ReActChatGuidance():
                 first_action_name  = val_rexep.findall(assistant_text_arr[first_action_idx])[0]
                 first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input:' in txt)
                 first_action_input = val_rexep.findall(assistant_text_arr[first_action_input_idx])
-                print('...', assistant_text_arr[first_action_thought_idx])
                 if first_action_input:
                     first_action_input = first_action_input[0]
                 else: 
@@ -133,7 +152,8 @@ class ReActChatGuidance():
                         f'Action Output: {first_action_output}',
                     ])
                     # ... and then append an observation on this output
-                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: does the action output satisfy the thought and action?''')
+                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: does the action output satisfy the thought/action?''')
+                    print('Observation: ', observation)
                     updated_agent_block = updated_agent_block + f'\nObservation: {observation}'
                     history = chat_progressing.text[:chat_progressing.text.rindex('<|im_start|>assistant')] + "<|im_start|>assistant\n" + updated_agent_block + "\n<|im_end|>\n"
             # ... if it was just a final answer, and no action, then be done
@@ -147,6 +167,8 @@ class ReActChatGuidance():
                     clean_choice = choice.replace('<|im_end|>', '')
                     return clean_choice, history
                 except Exception as err:
+                    print('final_answer', final_answer)
+                    print('final_action_output', final_action_output)
                     raise err # return final_answer, history
             else:
                 print('WARNING: Looping through without Action or Final Answer ->\n') # history
@@ -163,22 +185,26 @@ if __name__ == "__main__":
 # TEST: CALCULATOR
 # ==========================================================
 
-    print(f'========== ReAct Response: Tools - Search & Math - Init ==========')
-    agent = ReActChatGuidance(guidance, actions=dict_actions)
-    prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
-    response_react_calculations, history = agent.query(prompt)
-    print(f'========== ReAct Response: Tools - Search & Math - Result ==========')
-    print('Response ReAct: ', response_react_calculations)
-    # print(history)
+    # print(f'========== ReAct Response: Tools - Search & Math ==========')
+    # agent = ReActChatGuidance(guidance, actions=dict_actions)
+    # prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
+    # response_react_calculations, history = agent.query(prompt)
+    # print(f'========== ReAct Response: Tools - Search & Math = Result ==========')
+    # print(response_react_calculations)
+    # # print(history)
 
-    print(f'========== ReAct Response: Tools - Search & Writing - Init ==========')
-    agent = ReActChatGuidance(guidance, actions=dict_actions)
-    prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
-    response_react_writing, conversation = agent.query(prompt)
-    print(f'========== ReAct Response: Tools - Search & Writing - Result ==========')
-    print('Response ReAct: ', response_react_writing)
+    # print(f'========== ReAct Response: Tools - Search & Writing ==========')
+    # agent = ReActChatGuidance(guidance, actions=dict_actions)
+    # prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
+    # response_react_writing, conversation = agent.query(prompt)
+    # print(f'========== ReAct Response: Tools - Search & Writing = Result ==========')
+    # print(response_react_writing)
 
-    # print(f'========== ReAct Response: Tools - Search & Chemistry ==========')
-    # # TODO
+    print(f'========== ReAct Response: Tools - Search & Chemistry ==========')
+    agent = ReActChatGuidance(guidance, actions=dict_actions)
+    prompt = "Name a molecule with low solubility? What is it's SMILES code? What is that molecule's SELFIES code?"
+    response_react_chemistry, conversation = agent.query(prompt)
+    print(f'========== ReAct Response: Tools - Search & Chemistry = Result ==========')
+    print(response_react_chemistry)
 
     exit()
