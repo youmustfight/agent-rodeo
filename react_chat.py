@@ -3,11 +3,11 @@ import pydash as _
 import re
 import guidance
 from tools.calculate import calculate
-from tools.llms import writing
+from tools.llms import choose, writing
 from tools.serps_search import serps_search
 from tools.wikipedia import wikipedia_page_content_retrieval, wikipedia_pages_search 
 import utils.env as env
-from utils.gpt import COMPLETION_MODEL_3_5
+from utils.gpt import COMPLETION_MODEL_3_5, gpt_completion
 
 # ==========================================================
 # ReAct (reason, action)
@@ -32,15 +32,15 @@ dict_actions = {
     },
     'Search Wikipedia Pages': {
         'func': wikipedia_pages_search,
-        'description': 'Search to see what pages on Wikipedia exist for a topic, person, organization exists before retrieving content. (Example input: Jurrasic Park cast)',
+        'description': 'Search to see a list of Wikipedia pages that exist for a topic, person, organization exists before retrieving content. (Example input: Jurrasic Park cast)',
     },
     'Fetch Wikipedia Page Content': {
         'func': wikipedia_page_content_retrieval,
-        'description': 'After performing a pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
+        'description': 'After performing a Wikipedia pages search, this tool can retrieve content for a given Wikipedia page title (Example input: President of the United States)',
     },
     'Write': {
         'func': writing,
-        'description': ' General purpose function for completing logic, planning, and writing tasks. It\'s input is a text query/prompt. (Example inputs: write a plan for police reform, what is an opening joke for a stand up routine)'
+        'description': ' General purpose tool for writing tasks. Not appropriate for math. It\'s input is a task and relevant context, not the completed task text. (Example input: ("Write out what the meaning of life is", "Fact X. Statistic Y. Context Z", etc.))'
     }
 }
 
@@ -55,9 +55,9 @@ class ReActChatGuidance():
         # --- prompts
         react_prompt_system_actions_text = "\n".join(map(lambda action_label: f"{action_label}: {dict_actions[action_label]['description']}", list(dict_actions.keys())))
         self.react_prompt_system = "{{#system~}}" + f"""
-        ### Instruction:
+        Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request and end with a Final Answer. Current date: {date.today()}
 
-        Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request, and ends with a final answer. Current date: {date.today()}
+        ### Instruction:
 
         Complete the objective as best you can. You have access to the following actions/tools:
 
@@ -67,11 +67,13 @@ class ReActChatGuidance():
 
         Thought: you should always think about what to do
         Action: the action to take, should be one of [{", ".join(list(dict_actions.keys()))}]
-        Action Input: the input to the action, should be appropriate for tool input
+        Action Input: the input to the action, should be appropriate for tool input and required
         Observation: the result of the action
         ... (this Thought/Action/Action Input/Observation can repeat N times)
+        
         Thought: do you know the final answer
-        Final Answer: the final answer to the original input question.
+        Final Answer: the final answer to the original input question
+
         """ + "{{~/system}}"
         self.react_prompt_init_user = """
         {{#user~}}
@@ -95,7 +97,7 @@ class ReActChatGuidance():
         history = init_history or chat_progressing.text
         # --- assistant config
         assistant_cycles_num = 0
-        assistant_cycles_max = 20
+        assistant_cycles_max = 12
         # --- RUN
         while assistant_cycles_num <= assistant_cycles_max:
             print(f'assistant cycle #{assistant_cycles_num}...')
@@ -110,10 +112,10 @@ class ReActChatGuidance():
                 # TODO: make this more flexible where we can halt any action evaluation, for when we'd want a ToT approach where it'd vote on paths suggested
                 assistant_text_arr = chat_progressing_recent_assistant_text.split('\n')
                 val_rexep = re.compile(': (.+)')
-                first_action_thought_idx  = _.find_index(assistant_text_arr, lambda txt: 'Thought' in txt)
-                first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action' in txt)
+                first_action_thought_idx  = _.find_index(assistant_text_arr, lambda txt: 'Thought:' in txt)
+                first_action_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action:' in txt)
                 first_action_name  = val_rexep.findall(assistant_text_arr[first_action_idx])[0]
-                first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input' in txt)
+                first_action_input_idx  = _.find_index(assistant_text_arr, lambda txt: 'Action Input:' in txt)
                 first_action_input = val_rexep.findall(assistant_text_arr[first_action_input_idx])
                 print('...', assistant_text_arr[first_action_thought_idx])
                 if first_action_input:
@@ -128,26 +130,31 @@ class ReActChatGuidance():
                         f'{assistant_text_arr[first_action_thought_idx]}',
                         f'Action: {first_action_name}',
                         f'Action Input: {first_action_input}',
-                        f'Observation: {first_action_output}',
+                        f'Action Output: {first_action_output}',
                     ])
+                    # ... and then append an observation on this output
+                    observation = gpt_completion(prompt=f'''ACTION:\n{updated_agent_block}\n\nQUERY: does the action output satisfy the thought and action?''')
+                    updated_agent_block = updated_agent_block + f'\nObservation: {observation}'
                     history = chat_progressing.text[:chat_progressing.text.rindex('<|im_start|>assistant')] + "<|im_start|>assistant\n" + updated_agent_block + "\n<|im_end|>\n"
             # ... if it was just a final answer, and no action, then be done
             elif 'Final Answer' in chat_progressing_recent_assistant_text:
-                break
+                history = chat_progressing.text
+                # ... our final answer can sometimes be a composition over multiple actions/observations, need to find a way to guarentee a "final answer" (in v1, I was just returning the final answer, but that can sometimes just be a meta-response)
+                final_answer = history[history.rindex('Final Answer:'):].replace('Final Answer:', '').strip()
+                final_action_output = history[history.rindex('Action Output:'):history.rindex('Observation:')].replace('Action Output:', '').strip()
+                try:
+                    choice = choose(query, [final_action_output, final_answer])
+                    clean_choice = choice.replace('<|im_end|>', '')
+                    return clean_choice, history
+                except Exception as err:
+                    raise err # return final_answer, history
             else:
-                print('WARNING: Looping through without action ->\n', history)
+                print('WARNING: Looping through without Action or Final Answer ->\n') # history
             # ... increment and run again!
             assistant_cycles_num += 1
             # ... if we hit max cycles, just throw we should have had a response by now
             if assistant_cycles_num == assistant_cycles_max:
                 raise 'Max assistant cycles with no final answer.'
-
-        # FIN
-        # print("///////////")
-        # print(history)
-        # print("///////////")
-        fn = chat_progressing.variables()['fn']
-        return fn[fn.rindex('Final Answer:'):].replace('Final Answer:', '').strip()        
 
 
 
@@ -155,15 +162,23 @@ if __name__ == "__main__":
 # ==========================================================
 # TEST: CALCULATOR
 # ==========================================================
+
+    print(f'========== ReAct Response: Tools - Search & Math - Init ==========')
     agent = ReActChatGuidance(guidance, actions=dict_actions)
     prompt = "Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 2 * 100 equal? What is the current Bronx Borough President's age? What's the difference between both numbers?"
-    response_react_calculations = agent.query(prompt)
-    prompt = "Write an inspirational speech for President Joe Biden who will be speaking at the MET Gala"
-    response_react_writing = agent.query(prompt)
-    print(f'========== ReAct Response: Tools - Calculator & Search ==========')
+    response_react_calculations, history = agent.query(prompt)
+    print(f'========== ReAct Response: Tools - Search & Math - Result ==========')
     print('Response ReAct: ', response_react_calculations)
-    print(f'========== ReAct Response: Tools - Writing & Search ==========')
+    # print(history)
+
+    print(f'========== ReAct Response: Tools - Search & Writing - Init ==========')
+    agent = ReActChatGuidance(guidance, actions=dict_actions)
+    prompt = "You are Karl Marx and you will be speaking at the MET Gala. Write a speech for the MET Gala. Mention it's current theme within your philosophy."
+    response_react_writing, conversation = agent.query(prompt)
+    print(f'========== ReAct Response: Tools - Search & Writing - Result ==========')
     print('Response ReAct: ', response_react_writing)
-    # response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
-    # print('Response IO: ', response_io)
+
+    # print(f'========== ReAct Response: Tools - Search & Chemistry ==========')
+    # # TODO
+
     exit()

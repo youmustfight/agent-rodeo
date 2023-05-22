@@ -18,5 +18,5 @@ def serps_search(query, history):
     )
     result_arr = response.json()['organic']
     result = list(map(lambda obj: obj.get("snippet"), result_arr))
-    # print('[TOOL] serps_search -> search_results', result)
+    print('[TOOL] serps_search -> ', result)
     return result

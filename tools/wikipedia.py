@@ -16,7 +16,7 @@ def wikipedia_pages_search(query, history):
     data = response.json()
     # RETURNs list of page titles that we found successfully. it's a str[] in a nested arr returned (also can pass back the )
     results = list(zip(data[1], data[3]))
-    # print('[TOOL] wikipedia_pages_search -> ', results)
+    print('[TOOL] wikipedia_pages_search -> ', results)
     return results
 
 
