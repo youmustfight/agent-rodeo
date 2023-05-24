@@ -64,21 +64,23 @@ class Door(object):
         State(name=States.OPENED),
         State(name=States.BROKEN),
     ]
+
     # --- actions
     def cond_can_open(self):
         return self.broken == False and self.locked == False
+
     def cond_is_not_broken(self):
-        print('self.broken', self.broken)
         is_not_broken = self.broken == False
-        print('self.broken', self.broken)
-        print('is_not_broken', is_not_broken)
         return is_not_broken
+
     def action_lock(self):
         print('*click*')
         self.locked = True
+
     def action_unlock(self):
         print('*clack*')
         self.locked = False
+
     def action_break_it(self):
         strength_roll = random.randint(1, 8) # Dungeons & Dragons inspiration lol
         if strength_roll > 4: # make higher if we want to fail
@@ -87,8 +89,10 @@ class Door(object):
         else:
             print('*thud*', f'(strength roll: {strength_roll})')
             self.broken = False
+
     def action_fix_it(self):
         self.broken = False
+
     # --- transitions
     machine_transitions = [
         # CLOSED
@@ -107,6 +111,7 @@ class Door(object):
         # ... no state changes allowed
         { 'trigger': 'fix', 'source': States.BROKEN, 'dest': States.OPENED },
     ]
+
     # INIT
     def __init__(self):
         self.machine = Machine(
