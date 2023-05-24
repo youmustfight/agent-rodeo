@@ -1,9 +1,10 @@
 import enum
 import logging
+import random
 from transitions import Machine, State
 
 # LOGGING
-logging.basicConfig(level=logging.INFO) # DEBUG
+# logging.basicConfig(level=logging.INFO) # DEBUG
 
 # ==========================================================
 # State Machine without tracking internal data/context
@@ -66,6 +67,12 @@ class Door(object):
     # --- actions
     def cond_can_open(self):
         return self.broken == False and self.locked == False
+    def cond_is_not_broken(self):
+        print('self.broken', self.broken)
+        is_not_broken = self.broken == False
+        print('self.broken', self.broken)
+        print('is_not_broken', is_not_broken)
+        return is_not_broken
     def action_lock(self):
         print('*click*')
         self.locked = True
@@ -73,20 +80,26 @@ class Door(object):
         print('*clack*')
         self.locked = False
     def action_break_it(self):
-        self.broken = True
+        strength_roll = random.randint(1, 8) # Dungeons & Dragons inspiration lol
+        if strength_roll > 4: # make higher if we want to fail
+            print('*CRACK*', f'(strength roll: {strength_roll})')
+            self.broken = True
+        else:
+            print('*thud*', f'(strength roll: {strength_roll})')
+            self.broken = False
     def action_fix_it(self):
         self.broken = False
     # --- transitions
     machine_transitions = [
         # CLOSED
         { 'trigger': 'open', 'source': States.CLOSED, 'dest': States.OPENED, 'conditions': ['cond_can_open'] },
-        { 'trigger': 'break_it', 'source': States.CLOSED, 'dest': States.BROKEN },
+        { 'trigger': 'break_it', 'source': States.CLOSED, 'dest': States.BROKEN, 'prepare': ['action_break_it'], 'conditions': ['cond_is_not_broken'] }, # prepare is the way to do an action prior to condition -> https://github.com/pytransitions/transitions#callback-execution-order
         { 'trigger': 'knock', 'source': States.CLOSED, 'dest': None, 'after': [knock_and_say_something] },
         { 'trigger': 'lock', 'source': States.CLOSED, 'dest': None, 'after': ['action_lock'] },
         { 'trigger': 'unlock', 'source': States.CLOSED, 'dest': None, 'after': ['action_unlock'] },
         # OPEN
         { 'trigger': 'close', 'source': States.OPENED, 'dest': States.CLOSED },
-        { 'trigger': 'break_it', 'source': States.OPENED, 'dest': States.BROKEN },
+        { 'trigger': 'break_it', 'source': States.OPENED, 'dest': States.BROKEN, 'prepare': ['action_break_it'], 'conditions': ['cond_is_not_broken'] },
         { 'trigger': 'knock', 'source': States.OPENED, 'dest': None, 'after': [knock_and_say_something] },
         { 'trigger': 'lock', 'source': States.OPENED, 'dest': None, 'after': ['action_lock'] },
         { 'trigger': 'unlock', 'source': States.OPENED, 'dest': None, 'after': ['action_unlock'] },
@@ -138,3 +151,12 @@ new_door.unlock()
 new_door.open()
 print('-')
 print(new_door.state)
+new_door.break_it()
+print('-')
+print(new_door.state)
+new_door.open()
+print('-')
+print(new_door.state)
+new_door.fix()
+print(new_door.state)
+
