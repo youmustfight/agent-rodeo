@@ -1,5 +1,12 @@
+from datetime import date, datetime
+import enum
+from time import sleep
+from typing import Any, Dict, List
 import guidance
-from react_chat import ReActChatGuidance, dict_actions
+from transitions import Machine, State
+from tools import dict_tools
+from react_chat import ReActChatGuidance
+import utils.env as env
 from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_from_text_string, gpt_completion
 
 # ==========================================================
@@ -14,9 +21,221 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_fro
 # ==========================================================
 
 # ==========================================================
-# ToT V3
+# ToT V3 (trying to get a bit more clarity/control with a state machine approach)
 # ==========================================================
 
+# came up with a way to do multiple generations in 1 go and get discrete vars for it
+# self._convert_conversation_block_to_str({
+#     'tag': 'geneach',
+#     'num_iterations': 3,
+#     'name': 'plans',
+#     'content': self._convert_conversation_block_to_str({
+#         'tag': str(CHAT_ROLES.ASSISTANT),
+#         'content': "{{gen 'this.plan' temperature=0.7 max_tokens=600}}"
+#     })
+# })
+
+class STATES(enum.Enum):
+    INIT = 'INIT'
+    PLANNING = 'PLANNING'
+    STEP = 'STEP'
+    FINAL = 'FINAL'
+
+class CHAT_ROLES(enum.Enum):
+    ASSISTANT = 'assistant'
+    SYSTEM = 'system'
+    USER = 'user'
+    def __str__(self): # bc apparently you can't concat by default w/o this...
+        return str(self.value)
+
+
+class TreeChain(object):
+    # MACHINE DEFS
+    # HELPERS
+    def _add_conversation_block(self, tag, content):
+        self.conversation.append({ 'tag': str(tag), 'content': content, 'added_at': datetime.now() })
+
+    def _convert_conversation_block_to_str(self, block):
+        opening_tag = '{{#' + str(block.get('tag'))
+        if block.get('name'):
+            opening_tag = opening_tag + f" '{block.get('name')}'"
+        if block.get('num_iterations'):
+            opening_tag = opening_tag + f" num_iterations={block.get('num_iterations')}"
+        opening_tag_closed = opening_tag + '~}}'
+        closing_tag = '{{~/' + str(block.get('tag')) + '}}'
+        return opening_tag_closed + '\n' + block.get('content') + '\n' + closing_tag
+    
+    def _convert_conversation_to_str(self):
+        return '\n'.join(map(lambda block: self._convert_conversation_block_to_str(block), self.conversation))
+
+    def _form_guidance_template(self, blocks, prefix_history=True):
+        blocks_str = "\n".join(map(self._convert_conversation_block_to_str, blocks))
+        if prefix_history == True:
+            return self._convert_conversation_to_str() + '\n' + blocks_str
+        return blocks_str
+
+    def _response_to_dict(self, response_str):
+        
+        return {
+            # 'Thought': response_str[response_str.index('Thought: '):response_str.index('Action: ')].replace('Thought: ', '').strip(),
+            # 'Action': response_str[response_str.index('Action: '):response_str.index('Action Input: ')].replace('Action: ', '').strip(),
+            # 'Final Answer': response_str[response_str.index('Final Answer: '):].replace('Final Answer: ', ''),
+        }
+
+
+    # ACTIONS
+    def _action_planning(self):
+        # --- generate X plans given context/history
+        plans = []
+        while len(plans) < 1:
+            print('planning...')
+            planning_program = guidance(
+                self._form_guidance_template([
+                    { 'tag': str(CHAT_ROLES.USER), 'content': 'Observe the task. Then think out loud about it. If it requires creativity, be expressive in your thoughts. If it requires computation, be methodical in your thoughts.' },
+                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=1 max_tokens=600}}" },
+                ]),
+                llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
+            )
+            planning_executed = planning_program()
+            plans.append(planning_executed.variables()['plan'])
+        plans_as_text = "\n\n-------\n\n".join(f"## CHOICE {idx}\n\n{str}" for idx, str in enumerate(plans)) # TODO: feels like a bias for 0 index
+        # --- vote on plans
+        vote_idx = 0
+        tally = dict()
+        while vote_idx < 1:
+            print('voting...')
+            voting_program = guidance(
+                self._form_guidance_template([
+                    { 'tag': str(CHAT_ROLES.USER), 'content': 'Analyize each choice in detail, and choose which will lead to the best output. Respond in JSON format with keys "choice_integer" and "choice_reason".' },
+                    { 'tag': str(CHAT_ROLES.USER), 'content': plans_as_text },
+                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=0.7 max_tokens=600}}" }
+                ]),
+                llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
+            )
+            voting_executed = voting_program()
+            # ... attempt to tally
+            try:
+                plan_str = voting_executed.variables().get('plan')
+                plan_json = extract_json_from_text_string(plan_str)
+                choice = int(plan_json['choice_integer'])
+                tally[choice] = tally.get(choice, 0) + 1
+                vote_idx += 1 # TODO: determine if i should do this while
+                print(f'Choice #{plan_json["choice_integer"]}: ', plan_json['choice_reason'])
+            except Exception as err:
+                print('Couldnt Tally: ', err, voting_executed.variables())
+        winning_plan_idx = max(tally)
+        winning_plan = plans[winning_plan_idx]
+        # --- add winner as a THOUGHT on an assistant block
+        self._add_conversation_block(CHAT_ROLES.ASSISTANT, 'Thought: ' + winning_plan)
+        # --- move to step
+        self.next()
+
+    def _action_step(self):
+        print('stepping...')
+        # generate next assistant thought
+        next_program = guidance(
+            self._form_guidance_template([
+                # { 'tag': str(CHAT_ROLES.USER), 'content': "State an Action and Action Input." }, # this failed so hard. forced an action and did chemistry during creative writing lol
+                { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'next_response' temperature=0.7}}" },
+            ]),
+            llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
+        )
+        next_executed = next_program()
+        next_response = next_executed.variables().get('next_response')
+        # evaluate returned gen (TODO: maybe we do a user input request if we're stuck? maybe just force final answer if stuck)
+        # --- if we see a final answer: eval if its good enough (maybe there should be an input data type expectation?)
+        # ------ if so save final data to machine
+        # ------ if not, continue
+        # --- re-run assistant step
+        sleep(5)
+        self.next()
+        print('next_response')
+        print('next_response')
+        print(next_response)
+        print('next_response')
+        print('next_response')
+        print(self._response_to_dict(next_response))
+        print('next_response')
+        print('next_response')
+        print(self.conversation)
+        print('next_response')
+        print('next_response')
+    
+
+    # STATES
+    STATES = STATES
+    # TODO: maybe do a hierarchical, or spawning, machine style so it can replicate and aim for specific outputs
+    machine_states = [
+        State(name=STATES.INIT, ), # system prompt starting point
+        State(name=STATES.PLANNING, on_enter=['_action_planning']), # Tree-of-Thought step where we're generating paths and voting on them
+        State(name=STATES.STEP, on_enter=['_action_step']), # ReAct
+        State(name=STATES.FINAL), # is there ever a final? Or is it just possible that we can provide a new prompt to build upon/continue us?
+    ]
+
+    # TRANSITIONS
+    machine_transitions = [
+        { 'trigger': 'next', 'source': STATES.INIT, 'dest': STATES.PLANNING },
+        { 'trigger': 'next', 'source': STATES.PLANNING, 'dest': STATES.STEP },
+        { 'trigger': 'next', 'source': STATES.STEP, 'dest': None },
+    ]
+
+    # INTERNAL CONTEXT/DATA
+    conversation: List[Dict] = []
+    tools = dict()
+    system_prompt = 'You are a helpful assistant.'
+    user_prompt = None
+    done = False
+    
+    # INIT
+    def __init__(self, system_prompt=None, tools=dict()) -> None:
+        self.machine = Machine(
+            model=self,
+            states=self.machine_states,
+            transitions=self.machine_transitions,
+            initial=STATES.INIT
+        )
+        self.tools = tools
+        # --- init convo
+        self.system_prompt = system_prompt or self.system_prompt
+        self._add_conversation_block(CHAT_ROLES.SYSTEM, system_prompt or self.system_prompt)
+
+    def prompt(self, prompt):
+        self.user_prompt = prompt
+        self._add_conversation_block(CHAT_ROLES.USER, 'Question: ' + prompt)
+        # ... begin!
+        self.next()
+        return 'todo'
+
+
+system_prompt_tools_text = "\n".join(map(lambda action_label: f"{action_label}: {dict_tools[action_label]['description']}", list(dict_tools.keys())))
+system_prompt = f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request and end with a Final Answer. Current date: {date.today()}
+
+### Instruction:
+
+Complete the objective as best you can. You have access to the following actions/tools:
+
+{system_prompt_tools_text}
+
+Strictly use the following format:
+
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{", ".join(list(dict_tools.keys()))}]
+Action Input: the input to the action, should be appropriate for tool input an d required
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+
+Thought: do you know the final answer
+Final Answer: the final answer to the original input question
+"""
+user_prompt = "Write a coherent passage of 4 short paragraphs. The end sentence of each paragraph must be: 1. It isn't difficult to do a handstand if you just stand on your hands. 2. It caught him off guard that space smelled of seared steak. 3. When she didn't like a guy who was trying to pick her up, she started using sign language. 4. Each person who knows you has a different perception of who you are."
+tot = TreeChain(system_prompt=system_prompt, tools=dict_tools)
+response_tot = tot.prompt(user_prompt)
+
+print(f'========== ToT Response ==========')
+print(response_tot)
+# print(f'========== IO Response ==========')
+# response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
+# print(response_io)
 
 
 
@@ -24,41 +243,41 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_fro
 # ToT V2
 # ==========================================================
 
-def tot(prompt_task):
-		print(f'\nPROMPT:\n{prompt_task}\n')
-		# PLANS
-		plans = []
-		# --- generate
-		while len(plans) < 3:
-				print(f'GENERATING PLAN #{len(plans) + 1}...')
-				agent = ReActChatGuidance(guidance, actions=dict_actions) # could be cool to do a quick LLM call to see what tools are relevant dict_actions
-				query = f'I want the following task done: "{prompt_task}". Please don\'t do the task yet. Who is a lesser known world-class expert (past or present) who can do this task/topic?'
-				agent_plan = agent.query(query=query, return_plan=True)
-				plans.append(agent_plan)
-		# --- format
-		execution_plans = "\n\n-------\n\n".join(f"## CHOICE {idx} ##\n\n{str}" for idx, str in enumerate(plans))
-		print('\n\n' + execution_plans)
-		# VOTE
-		votes = []
-		while len(votes) < 5:
-				print(f'VOTE #{len(votes) + 1}...')
-				vote_response = gpt_completion(prompt=f'Analyizing each choice in detail, choose the best and respond in JSON format with keys "choice_integer" and "choice_reason". TASK: {prompt_task} \n\n {execution_plans}', model=COMPLETION_MODEL_3_5)
-				votes.append(vote_response)
-		# --- tally
-		tally = dict()
-		for vote_string in votes:
-				json = extract_json_from_text_string(vote_string)
-				choice = int(json['choice_integer'])
-				tally[choice] = tally.get(choice, 0) + 1
-				print(f'Voted {choice}: {json.get("choice_reason", "")[0:600]}...')
-		print(f'\nTALLY:\n{tally}\n')
-		# EXECUTE PLAN?
-		highest_voted_plan = plans[max(tally)]
-		final_execution = gpt_completion(
-				prompt=f'{prompt_task} (Inspiration: {highest_voted_plan.replace("Final Answer:", "")})',
-				model=COMPLETION_MODEL_3_5)
-		# RETURN (select plan via index with highest int)
-		return final_execution
+# def tot(prompt_task):
+# 		print(f'\nPROMPT:\n{prompt_task}\n')
+# 		# PLANS
+# 		plans = []
+# 		# --- generate
+# 		while len(plans) < 3:
+# 				print(f'GENERATING PLAN #{len(plans) + 1}...')
+# 				agent = ReActChatGuidance(guidance, actions=dict_tools) # could be cool to do a quick LLM call to see what tools are relevant dict_tools
+# 				query = f'I want the following task done: "{prompt_task}". Please don\'t do the task yet. Who is a lesser known world-class expert (past or present) who can do this task/topic?'
+# 				agent_plan = agent.query(query=query, return_plan=True)
+# 				plans.append(agent_plan)
+# 		# --- format
+# 		execution_plans = "\n\n-------\n\n".join(f"## CHOICE {idx} ##\n\n{str}" for idx, str in enumerate(plans))
+# 		print('\n\n' + execution_plans)
+# 		# VOTE
+# 		votes = []
+# 		while len(votes) < 5:
+# 				print(f'VOTE #{len(votes) + 1}...')
+# 				vote_response = gpt_completion(prompt=f'Analyizing each choice in detail, choose the best and respond in JSON format with keys "choice_integer" and "choice_reason". TASK: {prompt_task} \n\n {execution_plans}', model=COMPLETION_MODEL_3_5)
+# 				votes.append(vote_response)
+# 		# --- tally
+# 		tally = dict()
+# 		for vote_string in votes:
+# 				json = extract_json_from_text_string(vote_string)
+# 				choice = int(json['choice_integer'])
+# 				tally[choice] = tally.get(choice, 0) + 1
+# 				print(f'Voted {choice}: {json.get("choice_reason", "")[0:600]}...')
+# 		print(f'\nTALLY:\n{tally}\n')
+# 		# EXECUTE PLAN?
+# 		highest_voted_plan = plans[max(tally)]
+# 		final_execution = gpt_completion(
+# 				prompt=f'{prompt_task} (Inspiration: {highest_voted_plan.replace("Final Answer:", "")})',
+# 				model=COMPLETION_MODEL_3_5)
+# 		# RETURN (select plan via index with highest int)
+# 		return final_execution
 
 # ==========================================================
 # ToT V1
@@ -118,13 +337,13 @@ def tot(prompt_task):
 # ==========================================================
 # TEST: Creative Writing
 # ==========================================================
-prompt = "Write a coherent passage of 4 short paragraphs. The end sentence of each paragraph must be: 1. It isn't difficult to do a handstand if you just stand on your hands. 2. It caught him off guard that space smelled of seared steak. 3. When she didn't like a guy who was trying to pick her up, she started using sign language. 4. Each person who knows you has a different perception of who you are."
-response_tot = tot(prompt)
-print(f'========== ToT Response ==========')
-print(response_tot)
-print(f'========== IO Response ==========')
-response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
-print(response_io)
+# prompt = "Write a coherent passage of 4 short paragraphs. The end sentence of each paragraph must be: 1. It isn't difficult to do a handstand if you just stand on your hands. 2. It caught him off guard that space smelled of seared steak. 3. When she didn't like a guy who was trying to pick her up, she started using sign language. 4. Each person who knows you has a different perception of who you are."
+# response_tot = tot(prompt)
+# print(f'========== ToT Response ==========')
+# print(response_tot)
+# print(f'========== IO Response ==========')
+# response_io = gpt_completion(prompt=prompt, model=COMPLETION_MODEL_4)
+# print(response_io)
 
 # Comparison of ToT and IO responses
 # Result: ToT voted on a plan that presented the thread/idea of personal growth

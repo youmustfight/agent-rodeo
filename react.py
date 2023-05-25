@@ -141,6 +141,7 @@ if __name__ == "__main__":
     print(f'========== ReAct Response: Tools - Calculator ==========')
     agent = ReActGuidance(guidance, dict_tools)
     prompt_calculation = 'Whats does 24 + 17 + ((2 + 2) / 2) * 100 - 5 * 65.5 equal? Provide just a number as a final answer.'
+    print(prompt_calculation)
     # For this prompt, if I don't include "provide just a number as final answer", the GPT 3.5/4 will do CoT. Probably embedded in their prompt.
     # However, when it's just a final answer response, the IO 3.5/4 gets it wrong and returns a differnet value every time
     response_react = agent.query(prompt_calculation)

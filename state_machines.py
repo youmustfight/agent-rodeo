@@ -127,8 +127,8 @@ class Door(object):
 
 
 # TEST PRINTS
-print('======= v2 =======')
 new_door = Door()
+print('======= v2 =======')
 new_door.knock()
 print('-')
 print(new_door.state)
