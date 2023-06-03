@@ -11,26 +11,26 @@ dict_tools = {
         'func': calculate,
         'description': 'Runs a calculation for math computation - uses Python eval function so must use math operations. (Example action input: 4 * 7 / 3)',
     },
-    # 'Write': {
+    # 'Creative Writer': {
     #     'func': writing,
     #     'description': ' Writes something given a writing prompt. Provide additional context when possible. Not appropriate for math, good for creative writing. (Example action input: ["Write out what the meaning of life is", "Fact X", "Statistic Y", "Context Z", ...])'
     # },
     # --- Chemistry
     'Get a Chemical Compound by CID': {
         'func': pubchem_get_compound_by_cid,
-        'description': 'Fetch a single compound\'s information by CID (PubChem Compound Identification). The input is a single integer.'
+        'description': 'Fetch a single molecular compound\'s information by CID (PubChem Compound Identification). The input is a single integer.'
     },
     'Get a Chemical Compound by SID': {
         'func': pubchem_get_compound_by_sid,
-        'description': 'Fetch a substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example action input: "999999999999")'
+        'description': 'Fetch molecular substance information by SID (Substance ID). This example fetches information about a substance with the SID. The input is a single integer. (Example action input: "999999999999")'
     },
     'Search for Chemical Compound CIDs by Name': {
         'func': pubchem_search_compounds_by_name,
-        'description': 'Fetch a list of compound CIDs given a proper molecule name, not a property. Cannot take conversational inputs. (Example action input: "Kryptonite")'
+        'description': 'Fetch a list of molecular compound CIDs given a proper molecule name, not a property. Cannot take conversational inputs. (Example action input: "Kryptonite")'
     },
     'Convert a Molecule\'s SMILES into SELFIES': {
         'func': convert_smiles_to_selfies,
-        'description': 'Translates a SMILES string into its corresponding SELFIES string. Strictly use the SMILES code as input. (Example action input: "c1ccccc1") (Example output: "[Cl][Ag]")'
+        'description': 'Translates a molecular SMILES string into its corresponding SELFIES string. Strictly use the SMILES code as input. (Example action input: "c1ccccc1") (Example output: "[Cl][Ag]")'
     },
     # --- Search Content
     'Search Google Results': {

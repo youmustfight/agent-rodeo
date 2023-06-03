@@ -1,11 +1,12 @@
 from datetime import date, datetime
 import enum
+import guidance
+import re
+from react_chat import ReActChatGuidance
 from time import sleep
 from typing import Any, Dict, List
-import guidance
 from transitions import Machine, State
 from tools import dict_tools
-from react_chat import ReActChatGuidance
 import utils.env as env
 from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_from_text_string, gpt_completion
 
@@ -38,7 +39,8 @@ from utils.gpt import COMPLETION_MODEL_3_5, COMPLETION_MODEL_4, extract_json_fro
 class STATES(enum.Enum):
     INIT = 'INIT'
     PLANNING = 'PLANNING'
-    STEP = 'STEP'
+    REASONING = 'REASONING'
+    ACTING = 'ACTING'
     FINAL = 'FINAL'
 
 class CHAT_ROLES(enum.Enum):
@@ -74,8 +76,25 @@ class TreeChain(object):
             return self._convert_conversation_to_str() + '\n' + blocks_str
         return blocks_str
 
+    def _is_not_done(self):
+        return self.done != True
+
     def _response_to_dict(self, response_str):
-        
+        chunks = []
+        # --- split on keyword
+        for chunk in response_str.split('\n'):
+            if re.match("^Thought|Action|Action Input|Observation|Final Answer:", chunk) != None:
+                chunks.append(chunk)
+            elif chunk != '':
+                chunks[-1] = chunks[-1] + ' ' + chunk
+        print(chunks) # pretty print does one str per line in the terminal
+        print(len(chunks))
+        # --- split str on arr
+        for idx, string in enumerate(chunks):
+            chunks[idx] = string.split(':',1)
+        print(chunks) # pretty print does one str per line in the terminal
+        print(len(chunks))
+        # --- return
         return {
             # 'Thought': response_str[response_str.index('Thought: '):response_str.index('Action: ')].replace('Thought: ', '').strip(),
             # 'Action': response_str[response_str.index('Action: '):response_str.index('Action Input: ')].replace('Action: ', '').strip(),
@@ -84,7 +103,7 @@ class TreeChain(object):
 
 
     # ACTIONS
-    def _action_planning(self):
+    def _step_planning(self):
         # --- generate X plans given context/history
         plans = []
         while len(plans) < 1:
@@ -92,13 +111,13 @@ class TreeChain(object):
             planning_program = guidance(
                 self._form_guidance_template([
                     { 'tag': str(CHAT_ROLES.USER), 'content': 'Observe the task. Then think out loud about it. If it requires creativity, be expressive in your thoughts. If it requires computation, be methodical in your thoughts.' },
-                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=1 max_tokens=600}}" },
+                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=0.9 max_tokens=600}}" },
                 ]),
                 llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
             )
             planning_executed = planning_program()
             plans.append(planning_executed.variables()['plan'])
-        plans_as_text = "\n\n-------\n\n".join(f"## CHOICE {idx}\n\n{str}" for idx, str in enumerate(plans)) # TODO: feels like a bias for 0 index
+        plans_as_text = "\n---\n".join(f"Option: {idx + 1}\n\n{str}" for idx, str in enumerate(plans)) # 'choices' in language start at 1. I've seen it return 1 even in lists of 0 because it's the 'first' option
         # --- vote on plans
         vote_idx = 0
         tally = dict()
@@ -106,9 +125,9 @@ class TreeChain(object):
             print('voting...')
             voting_program = guidance(
                 self._form_guidance_template([
-                    { 'tag': str(CHAT_ROLES.USER), 'content': 'Analyize each choice in detail, and choose which will lead to the best output. Respond in JSON format with keys "choice_integer" and "choice_reason".' },
+                    { 'tag': str(CHAT_ROLES.USER), 'content': 'Analyize each choice in detail, and choose which will lead to the best output. Respond in JSON format with both the object keys "choice_integer" and "choice_reason".' },
                     { 'tag': str(CHAT_ROLES.USER), 'content': plans_as_text },
-                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=0.7 max_tokens=600}}" }
+                    { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'plan' temperature=0.5 max_tokens=600}}" }
                 ]),
                 llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
             )
@@ -117,66 +136,85 @@ class TreeChain(object):
             try:
                 plan_str = voting_executed.variables().get('plan')
                 plan_json = extract_json_from_text_string(plan_str)
-                choice = int(plan_json['choice_integer'])
-                tally[choice] = tally.get(choice, 0) + 1
+                choice_idx = int(plan_json['choice_integer']) - 1 # subtracting 1 bc we added 1 in the choice text
+                tally[choice_idx] = tally.get(choice_idx, 0) + 1
                 vote_idx += 1 # TODO: determine if i should do this while
-                print(f'Choice #{plan_json["choice_integer"]}: ', plan_json['choice_reason'])
+                print(f'Option #{plan_json["choice_integer"]}: ', plan_json['choice_reason'])
             except Exception as err:
                 print('Couldnt Tally: ', err, voting_executed.variables())
         winning_plan_idx = max(tally)
         winning_plan = plans[winning_plan_idx]
-        # --- add winner as a THOUGHT on an assistant block
-        self._add_conversation_block(CHAT_ROLES.ASSISTANT, 'Thought: ' + winning_plan)
+        # --- add winner as a THOUGHT on an system block (trying it out on system? bc i don't want it to be reacted to like a conversation block)
+        self._add_conversation_block(CHAT_ROLES.ASSISTANT, 'Observation: ' + winning_plan)
         # --- move to step
         self.next()
 
-    def _action_step(self):
+    def _step_reasoning(self):
+        print('...')
+        print('reasoning...')
+        print('...')
+        # generate thought (include new user prompted one, but hide it in future executions?)
+        thought_program = guidance(
+            self._form_guidance_template([
+                { 'tag': str(CHAT_ROLES.USER), 'content': 'Think about what to do.' },
+                { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'thought' temperature=0.7 max_tokens=1000}}" },
+            ]),
+            llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
+        )
+        thought_executed = thought_program()
+        print(thought_executed.variables().get('thought'))
+        # ... if final answer
+        # ... else act
+        self._add_conversation_block(CHAT_ROLES.ASSISTANT, 'Thought: ' + thought_executed.variables().get('thought'))
+        self.next()
+
+    def _step_acting(self):
+        print('...')
         print('stepping...')
+        print(self._form_guidance_template([
+                # { 'tag': str(CHAT_ROLES.USER), 'content': "State an Action and Action Input." }, # this failed so hard. forced an action and did chemistry during creative writing lol
+                { 'tag': str(CHAT_ROLES.USER), 'content': 'What is the next Action, Action Input' },
+                { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'next_response' temperature=0.7}}" },
+            ]))
+        print('...')
         # generate next assistant thought
         next_program = guidance(
             self._form_guidance_template([
                 # { 'tag': str(CHAT_ROLES.USER), 'content': "State an Action and Action Input." }, # this failed so hard. forced an action and did chemistry during creative writing lol
+                { 'tag': str(CHAT_ROLES.USER), 'content': 'What is the next Action, Action Input for the initial user question/task' },
                 { 'tag': str(CHAT_ROLES.ASSISTANT), 'content': "{{gen 'next_response' temperature=0.7}}" },
             ]),
             llm=guidance.llms.OpenAI("gpt-3.5-turbo", token=env.env_get_open_ai_api_key(), caching=False)
         )
         next_executed = next_program()
         next_response = next_executed.variables().get('next_response')
+        print(next_response)
         # evaluate returned gen (TODO: maybe we do a user input request if we're stuck? maybe just force final answer if stuck)
         # --- if we see a final answer: eval if its good enough (maybe there should be an input data type expectation?)
         # ------ if so save final data to machine
         # ------ if not, continue
         # --- re-run assistant step
-        sleep(5)
-        self.next()
-        print('next_response')
-        print('next_response')
-        print(next_response)
-        print('next_response')
-        print('next_response')
-        print(self._response_to_dict(next_response))
-        print('next_response')
-        print('next_response')
         print(self.conversation)
-        print('next_response')
-        print('next_response')
-    
+        self.next()
 
     # STATES
     STATES = STATES
     # TODO: maybe do a hierarchical, or spawning, machine style so it can replicate and aim for specific outputs
     machine_states = [
         State(name=STATES.INIT, ), # system prompt starting point
-        State(name=STATES.PLANNING, on_enter=['_action_planning']), # Tree-of-Thought step where we're generating paths and voting on them
-        State(name=STATES.STEP, on_enter=['_action_step']), # ReAct
+        State(name=STATES.PLANNING, on_enter=['_step_planning']), # Tree-of-Thought step where we're generating paths and voting on them
+        State(name=STATES.REASONING, on_enter=['_step_reasoning']), # ReAct
+        State(name=STATES.ACTING, on_enter=['_step_acting']), # ReAct
         State(name=STATES.FINAL), # is there ever a final? Or is it just possible that we can provide a new prompt to build upon/continue us?
     ]
 
     # TRANSITIONS
     machine_transitions = [
         { 'trigger': 'next', 'source': STATES.INIT, 'dest': STATES.PLANNING },
-        { 'trigger': 'next', 'source': STATES.PLANNING, 'dest': STATES.STEP },
-        { 'trigger': 'next', 'source': STATES.STEP, 'dest': None },
+        { 'trigger': 'next', 'source': STATES.PLANNING, 'dest': STATES.REASONING },
+        { 'trigger': 'next', 'source': STATES.REASONING, 'dest': STATES.ACTING, 'conditions': ['_is_not_done'] },
+        { 'trigger': 'next', 'source': STATES.REASONING, 'dest': STATES.FINAL },
+        { 'trigger': 'next', 'source': STATES.ACTING, 'dest': STATES.REASONING },
     ]
 
     # INTERNAL CONTEXT/DATA
@@ -201,31 +239,27 @@ class TreeChain(object):
 
     def prompt(self, prompt):
         self.user_prompt = prompt
-        self._add_conversation_block(CHAT_ROLES.USER, 'Question: ' + prompt)
+        self._add_conversation_block(CHAT_ROLES.USER, 'TASK: ' + prompt)
         # ... begin!
         self.next()
         return 'todo'
 
 
 system_prompt_tools_text = "\n".join(map(lambda action_label: f"{action_label}: {dict_tools[action_label]['description']}", list(dict_tools.keys())))
-system_prompt = f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request and end with a Final Answer. Current date: {date.today()}
+system_prompt = f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. Current date: {date.today()}
 
 ### Instruction:
 
-Complete the objective as best you can. You have access to the following actions/tools:
+You have access to the following actions/tools:
 
 {system_prompt_tools_text}
 
 Strictly use the following format:
 
-Thought: you should always think about what to do
+Thought: you should always think about what to do. do you know the final answer
 Action: the action to take, should be one of [{", ".join(list(dict_tools.keys()))}]
 Action Input: the input to the action, should be appropriate for tool input an d required
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-
-Thought: do you know the final answer
-Final Answer: the final answer to the original input question
+... (this Thought/Action/Action Input can repeat N times)
 """
 user_prompt = "Write a coherent passage of 4 short paragraphs. The end sentence of each paragraph must be: 1. It isn't difficult to do a handstand if you just stand on your hands. 2. It caught him off guard that space smelled of seared steak. 3. When she didn't like a guy who was trying to pick her up, she started using sign language. 4. Each person who knows you has a different perception of who you are."
 tot = TreeChain(system_prompt=system_prompt, tools=dict_tools)
